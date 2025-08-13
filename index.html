@@ -9,15 +9,15 @@
 </head>
 <body>
     <h1>CLML Rich Text Editor</h1>
-    <div class="tabs">
-        <button id="rich-text-tab" class="tab-button active">Rich Text Editor</button>
-        <button id="xml-tab" class="tab-button">Raw XML</button>
-    </div>
-    <div id="editor-container" class="editor-view">
-        <div id="quill-editor"></div>
-    </div>
-    <div id="xml-container" class="editor-view" style="display: none;">
-        <textarea id="xml-editor"></textarea>
+    <div class="main-container">
+        <div id="editor-container" class="editor-view">
+            <h2>Rich Text Editor</h2>
+            <div id="quill-editor"></div>
+        </div>
+        <div id="xml-container" class="editor-view">
+            <h2>Raw XML</h2>
+            <textarea id="xml-editor"></textarea>
+        </div>
     </div>
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
     <script src="main.js"></script>
