@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const CLML_NAMESPACE = "http://www.legislation.gov.uk/namespaces/legislation";
     let originalXmlDoc;
     let isUpdating = false;
 
@@ -16,25 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const xmlEditor = document.getElementById('xml-editor');
-    const richTextTab = document.getElementById('rich-text-tab');
-    const xmlTab = document.getElementById('xml-tab');
-    const editorContainer = document.getElementById('editor-container');
-    const xmlContainer = document.getElementById('xml-container');
-
-    // Tab switching logic
-    richTextTab.addEventListener('click', () => {
-        editorContainer.style.display = 'block';
-        xmlContainer.style.display = 'none';
-        richTextTab.classList.add('active');
-        xmlTab.classList.remove('active');
-    });
-
-    xmlTab.addEventListener('click', () => {
-        editorContainer.style.display = 'none';
-        xmlContainer.style.display = 'block';
-        xmlTab.classList.add('active');
-        richTextTab.classList.remove('active');
-    });
 
     // Fetch and load initial data
     fetch('clml.xml')
@@ -57,7 +39,7 @@ document.addEventListener('DOMContentLoaded', () => {
             isUpdating = true;
             const newXmlDoc = htmlToClml(quill.root.innerHTML, originalXmlDoc);
             updateXmlEditor(newXmlDoc);
-            originalXmlDoc = newXmlDoc; // Update the reference
+            originalXmlDoc = newXmlDoc;
             isUpdating = false;
         }
     });
@@ -73,19 +55,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.error('XML parsing error:', parseError);
             } else {
                 updateQuillFromXml(newXmlDoc);
-                originalXmlDoc = newXmlDoc; // Update the reference
+                originalXmlDoc = newXmlDoc;
             }
             isUpdating = false;
         }
     });
 
     function updateQuillFromXml(xmlDoc) {
-        const primaryNode = xmlDoc.getElementsByTagName('Primary')[0];
+        const primaryNode = xmlDoc.getElementsByTagNameNS(CLML_NAMESPACE, 'Primary')[0];
         if (primaryNode) {
             const html = clmlNodeToHtml(primaryNode);
             quill.root.innerHTML = html;
         } else {
-            quill.root.innerHTML = "<p>Error: Could not find &lt;Primary&gt; element.</p>";
+            quill.root.innerHTML = "<p>Error: Could not find &lt;Primary&gt; element. This might be due to a namespace issue.</p>";
         }
     }
 
@@ -104,26 +86,35 @@ function clmlNodeToHtml(node) {
         return '';
     }
 
-    let childrenHtml = Array.from(node.childNodes).map(clmlNodeToHtml).join('');
+    const childrenHtml = Array.from(node.childNodes).map(clmlNodeToHtml).join('');
 
-    // Basic mapping, can be expanded
-    switch (node.nodeName) {
-        case 'Title': return `<h2>${childrenHtml}</h2>`;
-        case 'LongTitle': return `<h3>${childrenHtml}</h3>`;
-        case 'Para':
-        case 'Text': return `<p>${childrenHtml}</p>`;
-        case 'Emphasis': return `<em>${childrenHtml}</em>`;
-        case 'SmallCaps': return `<span style="font-variant: small-caps;">${childrenHtml}</span>`;
-        case 'Term': return `<strong>${childrenHtml}</strong>`;
-        case 'UnorderedList': return `<ul>${childrenHtml}</ul>`;
-        case 'ListItem': return `<li>${childrenHtml}</li>`;
-        default: return `<div>${childrenHtml}</div>`; // Default to a div for structure
+    // A list of tags that should be represented as block-level elements in HTML
+    const blockElements = [
+        'Primary', 'PrimaryPrelims', 'Body', 'Pblock', 'P1group', 'P1', 'P2',
+        'P3', 'P4', 'P1para', 'P2para', 'P3para', 'P4para', 'Para', 'Title',
+        'LongTitle', 'UnorderedList', 'ListItem', 'ScheduleBody', 'Part', 'Text'
+    ];
+    const isBlock = blockElements.includes(node.localName);
+    const htmlTag = isBlock ? 'div' : 'span';
+
+    // Store original tag name and attributes in data-* attributes
+    let dataAttrs = `data-clml-tag="${node.localName}"`;
+    for (const attr of node.attributes) {
+        if (!attr.name.startsWith('xmlns')) {
+            dataAttrs += ` data-clml-attr-${attr.name}="${attr.value}"`;
+        }
     }
+
+    // Add a class for styling based on the original tag
+    const className = `clml-${node.localName.toLowerCase()}`;
+
+    return `<${htmlTag} class="${className}" ${dataAttrs}>${childrenHtml}</${htmlTag}>`;
 }
 
 function htmlToClml(htmlString, baseXmlDoc) {
+    const CLML_NAMESPACE = "http://www.legislation.gov.uk/namespaces/legislation";
     const newXmlDoc = baseXmlDoc.cloneNode(true);
-    const primaryNode = newXmlDoc.getElementsByTagName('Primary')[0];
+    const primaryNode = newXmlDoc.getElementsByTagNameNS(CLML_NAMESPACE, 'Primary')[0];
 
     if (!primaryNode) return newXmlDoc;
 
@@ -135,35 +126,36 @@ function htmlToClml(htmlString, baseXmlDoc) {
     tempDiv.innerHTML = htmlString;
 
     function traverse(htmlNode, clmlParent) {
-        htmlNode.childNodes.forEach(child => {
-            let newClmlNode;
-
-            if (child.nodeType === Node.TEXT_NODE && child.textContent.trim() !== '') {
-                const textWrapper = newXmlDoc.createElement('Text');
-                textWrapper.appendChild(newXmlDoc.createTextNode(child.textContent));
-                clmlParent.appendChild(textWrapper);
+        Array.from(htmlNode.childNodes).forEach(child => {
+            if (child.nodeType === Node.TEXT_NODE) {
+                if (child.textContent.trim()) {
+                    clmlParent.appendChild(newXmlDoc.createTextNode(child.textContent));
+                }
                 return;
             }
 
             if (child.nodeType !== Node.ELEMENT_NODE) return;
 
-            switch (child.nodeName) {
-                case 'H2': newClmlNode = newXmlDoc.createElement('Title'); break;
-                case 'H3': newClmlNode = newXmlDoc.createElement('LongTitle'); break;
-                case 'P': newClmlNode = newXmlDoc.createElement('Para'); break;
-                case 'EM': newClmlNode = newXmlDoc.createElement('Emphasis'); break;
-                case 'STRONG': newClmlNode = newXmlDoc.createElement('Term'); break;
-                case 'UL': newClmlNode = newXmlDoc.createElement('UnorderedList'); break;
-                case 'LI': newClmlNode = newXmlDoc.createElement('ListItem'); break;
-                default: newClmlNode = newXmlDoc.createElement('P1'); break; // Default to a structural tag
+            const clmlTagName = child.dataset.clmlTag;
+            if (!clmlTagName) {
+                // This is likely an element added by Quill for formatting (e.g., <p> for a new line).
+                // We will traverse its children to not lose any text.
+                traverse(child, clmlParent);
+                return;
             }
 
-            if (newClmlNode) {
-                clmlParent.appendChild(newClmlNode);
-                traverse(child, newClmlNode);
-            } else {
-                traverse(child, clmlParent);
+            const newClmlNode = newXmlDoc.createElementNS(CLML_NAMESPACE, clmlTagName);
+
+            // Reconstruct attributes from data-clml-attr-*
+            for (const attr of child.attributes) {
+                if (attr.name.startsWith('data-clml-attr-')) {
+                    const originalAttrName = attr.name.substring('data-clml-attr-'.length);
+                    newClmlNode.setAttribute(originalAttrName, attr.value);
+                }
             }
+
+            clmlParent.appendChild(newClmlNode);
+            traverse(child, newClmlNode);
         });
     }
 
